@@ -25,7 +25,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
-DEFAULT_SHEET_ID = "1Wo3m-mJnRT-qZKn34fs3gAD17e6rto54XcqfGYwnvf0"  # fallback if not in secrets
+DEFAULT_SHEET_ID = "1TerALNKo3SBzfbsp0qxPiDs-b7NG-Sn1Pcp7I24gCPY"  # fallback if not in secrets
 SHEET_ID = st.secrets.get("SHEET_ID", DEFAULT_SHEET_ID)
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "")
 
