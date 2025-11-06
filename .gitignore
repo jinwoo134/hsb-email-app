@@ -1,0 +1,8 @@
+# Never commit secrets or local stuff
+.streamlit/secrets.toml
+client_secret.json
+token*.json
+token*.pickle
+gmail_token_minter/
+__pycache__/
+.DS_Store
