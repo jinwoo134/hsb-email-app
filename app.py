@@ -17,11 +17,8 @@ st.set_page_config(page_title="📧 Personalized Email Draft App", layout="cente
 
 # ---------- CONFIG ----------
 SCOPES = [
-    # Draft creation
     "https://www.googleapis.com/auth/gmail.compose",
-    # Sending drafts/messages
     "https://www.googleapis.com/auth/gmail.send",
-    # Read Google Sheets
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
@@ -43,7 +40,7 @@ if missing:
     )
     st.stop()
 
-# ---------- AUTH (secrets-based; one refresh token for both APIs) ----------
+# ---------- AUTH ----------
 def creds_from_secrets(scopes: List[str]) -> Credentials:
     return Credentials(
         token=None,
@@ -67,7 +64,7 @@ def load_sheet_data(sheet_service, sheet_name: str = "Sheet1") -> pd.DataFrame:
     """
     result = sheet_service.spreadsheets().values().get(
         spreadsheetId=SHEET_ID,
-        range=sheet_name
+        range=sheet_name,
     ).execute()
     data = result.get("values", [])
     if not data:
@@ -83,18 +80,22 @@ def trim_first_syllable(name: str) -> str:
     return name[1:] if len(name) > 1 else name
 
 def has_hangul_syllable(ch: str) -> bool:
-    # Hangul syllables range
     return 0xAC00 <= ord(ch) <= 0xD7A3
 
-def subject_for_row(friend_filter: str, remove_suffix: bool, subject_input: str,
-                    name: str, position: str) -> str:
+def subject_for_row(
+    friend_filter: str,
+    remove_suffix: bool,
+    subject_input: str,
+    name: str,
+    position: str,
+) -> str:
     if remove_suffix:
         return subject_input
 
     if friend_filter == "친구":
         trimmed = trim_first_syllable(name or "")
         if trimmed and has_hangul_syllable(trimmed[-1]):
-            # 받침 check: (codepoint-0xAC00) % 28 -> 0 means no 받침 → '야', else '아'
+            # 받침 check
             suffix = "아" if ((ord(trimmed[-1]) - 0xAC00) % 28) else "야"
         else:
             suffix = ""
@@ -106,8 +107,8 @@ def build_mime_with_attachments(
     to_: str,
     subject_: str,
     body_: str,
-    files: Optional[Iterable]
-):
+    files: Optional[Iterable],
+) -> str:
     msg = MIMEMultipart()
     msg["to"] = to_
     msg["subject"] = subject_
@@ -119,7 +120,6 @@ def build_mime_with_attachments(
                 f.seek(0)
                 content = f.read()
             except Exception:
-                # If the object was already consumed, skip gracefully
                 continue
 
             filename = getattr(f, "name", None) or "attachment"
@@ -136,17 +136,17 @@ def build_mime_with_attachments(
             msg.attach(part)
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
-    return raw  # return raw string directly
+    return raw
 
 def create_draft(
     gmail_service,
     to: str,
     subject: str,
     body: str,
-    files=None
+    files=None,
 ) -> Optional[str]:
     raw = build_mime_with_attachments(to, subject, body, files)
-    # Gmail Drafts API expects {"message": {"raw": raw}}
+    # Correct Gmail Drafts payload
     draft = gmail_service.users().drafts().create(
         userId="me",
         body={"message": {"raw": raw}},
@@ -157,17 +157,16 @@ def send_drafts(gmail_service, draft_ids: List[str]) -> None:
     for did in draft_ids:
         gmail_service.users().drafts().send(
             userId="me",
-            body={"id": did}
+            body={"id": did},
         ).execute()
 
-# ---- helper to fetch ALL draft IDs in the mailbox ----
 def list_all_draft_ids(gmail_service) -> List[str]:
     ids: List[str] = []
     page_token = None
     while True:
         resp = gmail_service.users().drafts().list(
             userId="me",
-            pageToken=page_token
+            pageToken=page_token,
         ).execute()
         for d in resp.get("drafts", []):
             if "id" in d:
@@ -206,39 +205,41 @@ def main():
         return
 
     friend_filter = st.selectbox("친구 여부", ["친구", "친구 아님"])
+
     deal_types = [c for c in df.columns if c not in ["이름", "전자 메일 주소", "직함", "친구"]]
     if not deal_types:
         st.warning("No deal-type columns detected. Add some columns (e.g., 신주, 구주).")
-        deal_types = ["신주", "구주"]  # fallback UI choice
+        deal_types = ["신주", "구주"]
     deal_filter = st.selectbox("📂 딜 종류", deal_types)
+
     remove_suffix = st.checkbox("접미사 (님/아/야) 제거 + 제목도 제거")
 
     subject_input = st.text_input("이메일 제목", "")
     body_input = st.text_area("이메일 본문")
     file_inputs = st.file_uploader("📎 Attach files (optional)", accept_multiple_files=True)
 
-    # ---------- FIXED FILTERING ----------
+    # -------- FILTERING (NaN-safe, minimal change) --------
 
     # 친구 vs 비친구
     if friend_filter == "친구":
         filtered_df = df[
             df["친구"].notna()
-            & df["친구"].astype(str).str.strip().ne("")
+            & (df["친구"].astype(str).str.strip() != "")
         ]
     else:
         filtered_df = df[
             df["친구"].isna()
-            | df["친구"].astype(str).str.strip().eq("")
+            | (df["친구"].astype(str).str.strip() == "")
         ]
 
-    # 딜 타입 필터
+    # 딜 타입
     if deal_filter in filtered_df.columns:
         filtered_df = filtered_df[
             filtered_df[deal_filter].notna()
-            & filtered_df[deal_filter].astype(str).str.strip().ne("")
+            & (filtered_df[deal_filter].astype(str).str.strip() != "")
         ].copy()
 
-    # Build preview rows
+    # -------- PREVIEW --------
     preview_rows = []
     for _, row in filtered_df.iterrows():
         name = str(row.get("이름", "")).strip()
@@ -252,7 +253,7 @@ def main():
             remove_suffix,
             subject_input,
             name,
-            position
+            position,
         )
         preview_rows.append(
             {"이메일": email, "제목": subject, "본문": body_input}
@@ -262,14 +263,14 @@ def main():
     st.subheader("미리보기")
     st.dataframe(preview_df, use_container_width=True)
 
-    # Informational
+    # -------- INFO --------
     try:
         total_drafts_count = len(list_all_draft_ids(gmail_service))
         st.info(f"현재 Gmail 초안 수: {total_drafts_count}개 (이 앱 외에 만든 초안도 포함됩니다)")
     except Exception:
         pass
 
-    # Actions
+    # -------- ACTIONS --------
     col1, col2 = st.columns([1, 1])
 
     with col1:
@@ -277,12 +278,12 @@ def main():
             st.session_state["draft_ids"].clear()
             for _, row in preview_df.iterrows():
                 did = create_draft(
-                gmail_service,
-                to=row["이메일"],
-                subject=row["제목"],
-                body=row["본문"],
-                files=file_inputs,
-            )
+                    gmail_service,
+                    to=row["이메일"],
+                    subject=row["제목"],
+                    body=row["본문"],
+                    files=file_inputs,
+                )
                 if did:
                     st.session_state["draft_ids"].append(did)
             st.success(f"Drafts created: {len(st.session_state['draft_ids'])}")
@@ -294,4 +295,15 @@ def main():
             if not all_ids:
                 st.warning("No drafts found in Gmail.")
             elif not send_confirm:
-                st.warning("Pl
+                st.warning("Please tick 'Confirm send ALL drafts in Gmail' before sending.")
+            else:
+                send_drafts(gmail_service, all_ids)
+                st.success(f"Sent {len(all_ids)} draft(s).")
+
+    st.caption(
+        "Tip: Keep this URL private. For production use, add an opt-out footer, "
+        "a per-user login, and store per-user tokens in a DB."
+    )
+
+if __name__ == "__main__":
+    main()
