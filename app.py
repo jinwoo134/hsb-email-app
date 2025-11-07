@@ -29,7 +29,7 @@ DEFAULT_SHEET_ID = "1TerALNKo3SBzfbsp0qxPiDs-b7NG-Sn1Pcp7I24gCPY"  # fallback if
 SHEET_ID = st.secrets.get("SHEET_ID", DEFAULT_SHEET_ID)
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "")
 
-# Track only this session's drafts
+# Track only this session's drafts (unchanged; safe to leave even if unused for sending)
 if "draft_ids" not in st.session_state:
     st.session_state["draft_ids"] = []
 
@@ -146,6 +146,20 @@ def send_drafts(gmail_service, draft_ids: List[str]) -> None:
     for did in draft_ids:
         gmail_service.users().drafts().send(userId="me", body={"id": did}).execute()
 
+# ---- NEW: minimal helper to fetch ALL draft IDs in the mailbox ----
+def list_all_draft_ids(gmail_service) -> List[str]:
+    ids: List[str] = []
+    page_token = None
+    while True:
+        resp = gmail_service.users().drafts().list(userId="me", pageToken=page_token).execute()
+        for d in resp.get("drafts", []):
+            if "id" in d:
+                ids.append(d["id"])
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return ids
+
 # ---------- APP ----------
 def main():
     st.title("📧 Personalized Email Draft App")
@@ -212,8 +226,15 @@ def main():
     st.subheader("미리보기")
     st.dataframe(preview_df, use_container_width=True)
 
+    # Informational: show total drafts currently in Gmail (useful before sending ALL)
+    try:
+        total_drafts_count = len(list_all_draft_ids(gmail_service))
+        st.info(f"현재 Gmail 초안 수: {total_drafts_count}개 (이 앱 외에 만든 초안도 포함됩니다)")
+    except Exception:
+        pass
+
     # Actions
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2 = st.columns([1, 1])
 
     with col1:
         if st.button("💾 Save as Drafts"):
@@ -231,21 +252,16 @@ def main():
             st.success(f"Drafts created: {len(st.session_state['draft_ids'])}")
 
     with col2:
-        send_confirm = st.checkbox("✅ Confirm send")
-        if st.button("📤 Send Drafts (this session only)"):
-            if not st.session_state["draft_ids"]:
-                st.warning("No drafts recorded in this session. Create drafts first.")
+        send_confirm = st.checkbox("✅ Confirm send ALL drafts in Gmail")
+        if st.button("📤 Send ALL Gmail Drafts"):
+            all_ids = list_all_draft_ids(gmail_service)
+            if not all_ids:
+                st.warning("No drafts found in Gmail.")
             elif not send_confirm:
-                st.warning("Please tick 'Confirm send' before sending.")
+                st.warning("Please tick 'Confirm send ALL drafts in Gmail' before sending.")
             else:
-                send_drafts(gmail_service, st.session_state["draft_ids"])
-                st.success(f"Sent {len(st.session_state['draft_ids'])} draft(s).")
-                st.session_state["draft_ids"].clear()
-
-    with col3:
-        if st.button("🧹 Clear session draft IDs"):
-            st.session_state["draft_ids"].clear()
-            st.info("Cleared session draft IDs (does not delete Gmail drafts).")
+                send_drafts(gmail_service, all_ids)
+                st.success(f"Sent {len(all_ids)} draft(s).")
 
     st.caption(
         "Tip: Keep this URL private. For production use, add an opt-out footer, "
