@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
-from email.mime_text import MIMEText
+from email.mime.text import MIMEText  # ✅ correct import
 from email import encoders
 
 from google.oauth2.credentials import Credentials
@@ -134,12 +134,16 @@ def build_mime_with_attachments(
             part.add_header("Content-Type", f'{main_type}/{sub_type}; name="{filename}"')
             msg.attach(part)
 
+    # Returns dict in the shape Gmail expects when wrapped as {"message": raw_dict}
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
     return {"raw": raw}
 
 def create_draft(gmail_service, to: str, subject: str, body: str, files=None) -> Optional[str]:
     raw = build_mime_with_attachments(to, subject, body, files)
-    draft = gmail_service.users().drafts().create(userId="me", body={"message": raw}).execute()
+    draft = gmail_service.users().drafts().create(
+        userId="me",
+        body={"message": raw},  # -> {"message": {"raw": "..."}}
+    ).execute()
     return draft.get("id")
 
 def send_drafts(gmail_service, draft_ids: List[str]) -> None:
@@ -281,5 +285,4 @@ def main():
         "a per-user login, and store per-user tokens in a DB."
     )
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__ma
