@@ -63,7 +63,7 @@ def get_services():
 # ---------- DATA ----------
 def load_sheet_data(sheet_service, sheet_name: str = "Sheet1") -> pd.DataFrame:
     """
-    Expects columns: 이름, 전자 메일 주소, 직함, 친구, plus deal-type columns.
+    Expects columns: 이름, 직함, 전자 메일 주소, 친구, plus deal-type columns.
     """
     result = sheet_service.spreadsheets().values().get(
         spreadsheetId=SHEET_ID, range=sheet_name
