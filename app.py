@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.mime_text import MIMEText
 from email import encoders
 
 from google.oauth2.credentials import Credentials
@@ -200,15 +200,28 @@ def main():
     body_input = st.text_area("이메일 본문")
     file_inputs = st.file_uploader("📎 Attach files (optional)", accept_multiple_files=True)
 
-    # Filtering: friends vs non-friends
-    if friend_filter == "친구":
-        filtered_df = df[df["친구"].astype(str).str.strip().ne("")]
-    else:
-        filtered_df = df[df["친구"].isna() | df["친구"].astype(str).str.strip().eq("")]
+    # ---------- FIXED FILTERING ----------
 
-    # Deal filter (only rows where that column has a non-empty value)
+    # 친구 vs 비친구
+    if friend_filter == "친구":
+        # Only rows where 친구 is non-null AND non-empty after strip
+        filtered_df = df[
+            df["친구"].notna()
+            & df["친구"].astype(str).str.strip().ne("")
+        ]
+    else:
+        # Rows where 친구 is null OR empty after strip
+        filtered_df = df[
+            df["친구"].isna()
+            | df["친구"].astype(str).str.strip().eq("")
+        ]
+
+    # 딜 타입 필터 (선택된 column이 non-null AND non-empty)
     if deal_filter in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df[deal_filter].astype(str).str.strip().ne("")].copy()
+        filtered_df = filtered_df[
+            filtered_df[deal_filter].notna()
+            & filtered_df[deal_filter].astype(str).str.strip().ne("")
+        ].copy()
 
     # Build preview rows
     preview_rows = []
