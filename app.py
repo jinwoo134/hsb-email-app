@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText  # ✅ correct import
+from email.mime.text import MIMEText
 from email import encoders
 
 from google.oauth2.credentials import Credentials
@@ -29,7 +29,7 @@ DEFAULT_SHEET_ID = "1Wo3m-mJnRT-qZKn34fs3gAD17e6rto54XcqfGYwnvf0"  # fallback if
 SHEET_ID = st.secrets.get("SHEET_ID", DEFAULT_SHEET_ID)
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "")
 
-# Track only this session's drafts (unchanged; safe to leave even if unused for sending)
+# Track only this session's drafts
 if "draft_ids" not in st.session_state:
     st.session_state["draft_ids"] = []
 
@@ -66,7 +66,8 @@ def load_sheet_data(sheet_service, sheet_name: str = "Sheet1") -> pd.DataFrame:
     Expects columns: 이름, 직함, 전자 메일 주소, 친구, plus deal-type columns.
     """
     result = sheet_service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID, range=sheet_name
+        spreadsheetId=SHEET_ID,
+        range=sheet_name
     ).execute()
     data = result.get("values", [])
     if not data:
@@ -96,14 +97,16 @@ def subject_for_row(friend_filter: str, remove_suffix: bool, subject_input: str,
             # 받침 check: (codepoint-0xAC00) % 28 -> 0 means no 받침 → '야', else '아'
             suffix = "아" if ((ord(trimmed[-1]) - 0xAC00) % 28) else "야"
         else:
-            # Fallback for non-Hangul or empty
             suffix = ""
         return f"{trimmed}{suffix}, {subject_input}".strip(", ")
     else:
         return f"{(position or '').strip()}님, {subject_input}" if position else subject_input
 
 def build_mime_with_attachments(
-    to_: str, subject_: str, body_: str, files: Optional[Iterable]
+    to_: str,
+    subject_: str,
+    body_: str,
+    files: Optional[Iterable]
 ):
     msg = MIMEMultipart()
     msg["to"] = to_
@@ -112,7 +115,6 @@ def build_mime_with_attachments(
 
     if files:
         for f in files:
-            # Streamlit UploadedFile can be re-read if we seek(0)
             try:
                 f.seek(0)
                 content = f.read()
@@ -129,33 +131,44 @@ def build_mime_with_attachments(
             part = MIMEBase(main_type, sub_type)
             part.set_payload(content)
             encoders.encode_base64(part)
-            # These headers are important to prevent "attach.txt" behavior
             part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
             part.add_header("Content-Type", f'{main_type}/{sub_type}; name="{filename}"')
             msg.attach(part)
 
-    # Returns dict in the shape Gmail expects when wrapped as {"message": raw_dict}
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
-    return {"raw": raw}
+    return raw  # return raw string directly
 
-def create_draft(gmail_service, to: str, subject: str, body: str, files=None) -> Optional[str]:
+def create_draft(
+    gmail_service,
+    to: str,
+    subject: str,
+    body: str,
+    files=None
+) -> Optional[str]:
     raw = build_mime_with_attachments(to, subject, body, files)
+    # Gmail Drafts API expects {"message": {"raw": raw}}
     draft = gmail_service.users().drafts().create(
         userId="me",
-        body={"message": raw},  # -> {"message": {"raw": "..."}}
+        body={"message": {"raw": raw}},
     ).execute()
     return draft.get("id")
 
 def send_drafts(gmail_service, draft_ids: List[str]) -> None:
     for did in draft_ids:
-        gmail_service.users().drafts().send(userId="me", body={"id": did}).execute()
+        gmail_service.users().drafts().send(
+            userId="me",
+            body={"id": did}
+        ).execute()
 
-# ---- NEW: minimal helper to fetch ALL draft IDs in the mailbox ----
+# ---- helper to fetch ALL draft IDs in the mailbox ----
 def list_all_draft_ids(gmail_service) -> List[str]:
     ids: List[str] = []
     page_token = None
     while True:
-        resp = gmail_service.users().drafts().list(userId="me", pageToken=page_token).execute()
+        resp = gmail_service.users().drafts().list(
+            userId="me",
+            pageToken=page_token
+        ).execute()
         for d in resp.get("drafts", []):
             if "id" in d:
                 ids.append(d["id"])
@@ -208,19 +221,17 @@ def main():
 
     # 친구 vs 비친구
     if friend_filter == "친구":
-        # Only rows where 친구 is non-null AND non-empty after strip
         filtered_df = df[
             df["친구"].notna()
             & df["친구"].astype(str).str.strip().ne("")
         ]
     else:
-        # Rows where 친구 is null OR empty after strip
         filtered_df = df[
             df["친구"].isna()
             | df["친구"].astype(str).str.strip().eq("")
         ]
 
-    # 딜 타입 필터 (선택된 column이 non-null AND non-empty)
+    # 딜 타입 필터
     if deal_filter in filtered_df.columns:
         filtered_df = filtered_df[
             filtered_df[deal_filter].notna()
@@ -236,14 +247,22 @@ def main():
         if not email:
             continue
 
-        subject = subject_for_row(friend_filter, remove_suffix, subject_input, name, position)
-        preview_rows.append({"이메일": email, "제목": subject, "본문": body_input})
+        subject = subject_for_row(
+            friend_filter,
+            remove_suffix,
+            subject_input,
+            name,
+            position
+        )
+        preview_rows.append(
+            {"이메일": email, "제목": subject, "본문": body_input}
+        )
 
     preview_df = pd.DataFrame(preview_rows)
     st.subheader("미리보기")
     st.dataframe(preview_df, use_container_width=True)
 
-    # Informational: show total drafts currently in Gmail (useful before sending ALL)
+    # Informational
     try:
         total_drafts_count = len(list_all_draft_ids(gmail_service))
         st.info(f"현재 Gmail 초안 수: {total_drafts_count}개 (이 앱 외에 만든 초안도 포함됩니다)")
@@ -258,12 +277,12 @@ def main():
             st.session_state["draft_ids"].clear()
             for _, row in preview_df.iterrows():
                 did = create_draft(
-                    gmail_service,
-                    to=row["이메일"],
-                    subject=row["제목"],
-                    body=row["본문"],
-                    files=file_inputs,
-                )
+                gmail_service,
+                to=row["이메일"],
+                subject=row["제목"],
+                body=row["본문"],
+                files=file_inputs,
+            )
                 if did:
                     st.session_state["draft_ids"].append(did)
             st.success(f"Drafts created: {len(st.session_state['draft_ids'])}")
@@ -275,14 +294,4 @@ def main():
             if not all_ids:
                 st.warning("No drafts found in Gmail.")
             elif not send_confirm:
-                st.warning("Please tick 'Confirm send ALL drafts in Gmail' before sending.")
-            else:
-                send_drafts(gmail_service, all_ids)
-                st.success(f"Sent {len(all_ids)} draft(s).")
-
-    st.caption(
-        "Tip: Keep this URL private. For production use, add an opt-out footer, "
-        "a per-user login, and store per-user tokens in a DB."
-    )
-
-if __name__ == "__ma
+                st.warning("Pl
