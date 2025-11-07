@@ -196,7 +196,7 @@ def main():
     deal_filter = st.selectbox("📂 딜 종류", deal_types)
     remove_suffix = st.checkbox("접미사 (님/아/야) 제거 + 제목도 제거")
 
-    subject_input = st.text_input("이메일 제목", "투자 제안 관련 건")
+    subject_input = st.text_input("이메일 제목", "")
     body_input = st.text_area("이메일 본문")
     file_inputs = st.file_uploader("📎 Attach files (optional)", accept_multiple_files=True)
 
