@@ -8,6 +8,7 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email import encoders
+import urllib.parse
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -112,27 +113,47 @@ def build_mime_with_attachments(
     msg = MIMEMultipart()
     msg["to"] = to_
     msg["subject"] = subject_
+    # Keep your original plain-text body behavior
     msg.attach(MIMEText(body_ or "", "plain"))
 
     if files:
         for f in files:
             try:
+                # Always read bytes and rewind
                 f.seek(0)
                 content = f.read()
+                f.seek(0)
             except Exception:
                 continue
 
+            # Prefer browser-provided MIME if present (Windows/Chrome sometimes empty)
+            browser_type = getattr(f, "type", None)
             filename = getattr(f, "name", None) or "attachment"
-            content_type, encoding = mimetypes.guess_type(filename)
-            if content_type is None or encoding is not None:
+
+            # Robust MIME detection with safe fallback
+            content_type = browser_type or (mimetypes.guess_type(filename)[0])
+            if not content_type:
                 content_type = "application/octet-stream"
             main_type, sub_type = content_type.split("/", 1)
 
+            # Build a true binary attachment
             part = MIMEBase(main_type, sub_type)
             part.set_payload(content)
             encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
-            part.add_header("Content-Type", f'{main_type}/{sub_type}; name="{filename}"')
+
+            # Preserve filename (incl. Korean) across clients
+            safe_name = filename
+
+            # Standard headers
+            part.add_header("Content-Disposition", "attachment", filename=safe_name)
+
+            # Extra compatibility: include name on Content-Type
+            part.add_header("Content-Type", f'{main_type}/{sub_type}; name="{safe_name}"')
+
+            # RFC 2231 / UTF-8 filename* for wide client support (Chrome/Windows/Outlook/Gmail)
+            part.set_param("filename*", "UTF-8''" + urllib.parse.quote(safe_name), header="Content-Disposition")
+            part.set_param("name", safe_name, header="Content-Type")
+
             msg.attach(part)
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
