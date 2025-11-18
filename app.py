@@ -102,7 +102,7 @@ def subject_for_row(
             suffix = ""
         return f"{trimmed}{suffix}, {subject_input}".strip(", ")
     else:
-        return f"{(position or '').strip()}님, {subject_input}" if position else subject_input
+        return f"{(position or '').strip()}님 {subject_input}" if position else subject_input
 
 def build_mime_with_attachments(
     to_: str,
