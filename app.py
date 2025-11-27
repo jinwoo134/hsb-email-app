@@ -12,6 +12,7 @@ import urllib.parse
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.auth.exceptions import RefreshError
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="📧 Personalized Email Draft App", layout="centered")
@@ -53,10 +54,25 @@ def creds_from_secrets(scopes: List[str]) -> Credentials:
     )
 
 def get_services():
-    creds = creds_from_secrets(SCOPES)
-    gmail = build("gmail", "v1", credentials=creds)
-    sheets = build("sheets", "v4", credentials=creds)
-    return gmail, sheets
+    try:
+        creds = creds_from_secrets(SCOPES)
+        gmail = build("gmail", "v1", credentials=creds)
+        sheets = build("sheets", "v4", credentials=creds)
+        return gmail, sheets
+    except RefreshError as e:
+        st.error(
+            "🔒 **OAuth Token Expired**\n\n"
+            "Your Google refresh token has expired. This commonly happens when:\n"
+            "- Your OAuth app is in 'Testing' mode (tokens expire every 7 days)\n"
+            "- You've generated too many tokens\n\n"
+            "**To fix:**\n"
+            "1. Go to [Google Cloud Console](https://console.cloud.google.com/)\n"
+            "2. Navigate to 'APIs & Services' → 'OAuth consent screen'\n"
+            "3. **Publish your app** (changes Testing → Production)\n"
+            "4. Or re-generate a new token using `mint_refresh_token.py`\n\n"
+            "**After publishing**, refresh tokens will not expire every 7 days."
+        )
+        raise
 
 # ---------- DATA ----------
 def load_sheet_data(sheet_service, sheet_name: str = "Sheet1") -> pd.DataFrame:
