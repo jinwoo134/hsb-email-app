@@ -15,12 +15,13 @@ from googleapiclient.discovery import build
 from google.auth.exceptions import RefreshError
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="📧 Personalized Email Draft App", layout="centered")
+st.set_page_config(page_title="📧 HSB Email App", page_icon="📧", layout="centered")
 
 # ---------- CONFIG ----------
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
